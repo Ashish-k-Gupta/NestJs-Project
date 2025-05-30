@@ -52,13 +52,13 @@ export class User {
   @Column({ default: false })
   isVerified: boolean;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   verificationToken: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  verificationTokenExpires: Date;
+  verificationTokenExpires: Date | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   resetPasswordToken: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
