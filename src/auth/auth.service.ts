@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/await-thenable */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */ // Keep this if you have other unsafe member accesses
+// Remove @typescript-eslint/await-thenable as you'll await all promises correctly
 import {
   BadRequestException,
   ConflictException,
@@ -86,21 +87,23 @@ export class AuthService {
 
       const appBaseUrl = this.configService.get<string>('APP_BASE_URL');
       const verificationLink = `${appBaseUrl}/auth/verify-email?token=${newAdminUser.verificationToken}`;
+
+      // --- CHANGE START (Line 89 context) ---
       await this.emailService.sendMail({
-        // <--- Here's how you use it!
-        from: this.configService.get<string>('EMAIL_FROM'), // Your verified sender email from .env
-        to: newAdminUser.email, // The recipient's email
-        subject: 'Verify Your Email Address for Your New Organization', // The email subject
-        html: `                                           
-    <p>Hello ${newAdminUser.firstName},</p>
-    <p>Thank you for registering your organization! Please verify your email address to activate your account by clicking on the link below:</p>
-    <p><a href="${verificationLink}">Verify My Email Address</a></p>
-    <p>This verification link will expire in 15 minutes.</p>
-    <p>If you did not create an account, please ignore this email.</p>
-    <p>Thanks,</p>
-    <p>Your Application Team</p>
-  `, // The HTML content of the email
+        to: newAdminUser.email,
+        subject: 'Verify Your Email Address for Your New Organization',
+        html: `
+          <p>Hello ${newAdminUser.firstName},</p>
+          <p>Thank you for registering your organization! Please verify your email address to activate your account by clicking on the link below:</p>
+          <p><a href="${verificationLink}">Verify My Email Address</a></p>
+          <p>This verification link will expire in 15 minutes.</p>
+          <p>If you did not create an account, please ignore this email.</p>
+          <p>Thanks,</p>
+          <p>Your Application Team</p>
+        `,
       });
+      // --- CHANGE END ---
+
       this.logger.log(`Verification email sent to ${newAdminUser.email}`);
 
       this.logger.log('User Created Successfully');
@@ -154,6 +157,7 @@ export class AuthService {
       await queryRunner.release();
     }
   }
+
   async login(
     dto: LoginDto,
   ): Promise<{ message: string; role: UserRole[]; token: string }> {
@@ -270,22 +274,23 @@ export class AuthService {
       const appBaseUrl = this.configService.get<string>('APP_BASE_URL');
       const resetLink = `${appBaseUrl}/reset-password?token=${resetToken}`;
 
+      // --- CHANGE START (Line 273 context) ---
       await this.emailService.sendMail({
-        from: this.configService.get<string>('EMAIL_FROM'),
         to: user.email,
         subject: 'Password Reset Request',
         html: `
-           <p>Hello ${user.firstName || user.email},</p>
-
-            <p>You are receiving this because you (or someone else) have requested the reset of the password for your account.</p>
-            <p>Please click on the following link, or paste this into your browser to complete the process:</p>
-            <p><a href="${resetLink}">Reset My Password</a></p>
-            <p>This link will expire in 15 minutes.</p>
-            <p>If you did not request this, please ignore this email and your password will remain unchanged.</p>
-            <p>Thanks,</p>
-            <p>Your Application Team</p>
-          `,
+          <p>Hello ${user.firstName || user.email},</p>
+          <p>You are receiving this because you (or someone else) have requested the reset of the password for your account.</p>
+          <p>Please click on the following link, or paste this into your browser to complete the process:</p>
+          <p><a href="${resetLink}">Reset My Password</a></p>
+          <p>This link will expire in 15 minutes.</p>
+          <p>If you did not request this, please ignore this email and your password will remain unchanged.</p>
+          <p>Thanks,</p>
+          <p>Your Application Team</p>
+        `,
       });
+      // --- CHANGE END ---
+
       this.logger.log(`Password reset email sent to ${user.email}`);
       await queryRunner.commitTransaction();
       return {
@@ -347,18 +352,20 @@ export class AuthService {
       await queryRunner.manager.save(user);
       await queryRunner.commitTransaction();
 
+      // --- CHANGE START (Line 350 context) ---
       await this.emailService.sendMail({
-        from: this.configService.get<string>('EMAIL_FROM'),
         to: user.email,
         subject: 'Your Password Has Been Changed',
         html: `
-        <p>Hello ${user.firstName || user.email},</p>
-        <p>This is a confirmation that the password for your account has just been changed.</p>
-        <p>If you did not make this change, please contact support immediately.</p>
-        <p>Thanks,</p>
-        <p>Your Application Team</p>
-      `,
+          <p>Hello ${user.firstName || user.email},</p>
+          <p>This is a confirmation that the password for your account has just been changed.</p>
+          <p>If you did not make this change, please contact support immediately.</p>
+          <p>Thanks,</p>
+          <p>Your Application Team</p>
+        `,
       });
+      // --- CHANGE END ---
+
       this.logger.log(`Password successfully reset for user: ${user.email}`);
 
       return { message: 'Password has been reset successfully.' };
