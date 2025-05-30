@@ -16,17 +16,25 @@ import { OrganizationModule } from './organization/organization.module';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        database: configService.get<string>('DB_NAME'),
-        port: configService.get<number>('DB_PORT'),
-        username: configService.get<string>('DB_USERNAME'),
-        password: configService.get('DB_PASSWORD'),
-        host: configService.get<string>('DB_HOST'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true,
-        logging: true,
-      }),
+      useFactory: (configService: ConfigService) => {
+        const dbUrl = configService.get<string>('INTERNAL_DATABASE_URL_RENDER');
+        return {
+          type: 'postgres',
+          url: dbUrl,
+          // database: configService.get<string>('DB_NAME'),
+          // port: configService.get<number>('DB_PORT'),
+          // username: configService.get<string>('DB_USERNAME'),
+          // password: configService.get('DB_PASSWORD'),
+          // host: configService.get<string>('DB_HOST'),
+          // entities: [__dirname + '/**/*.entity{.ts,.js}'],
+          synchronize: true,
+          autoLoadEntities: true,
+          logging: true,
+          ssl: dbUrl?.includes('render.com')
+            ? { rejectUnauthorized: false }
+            : false,
+        };
+      },
     }),
     UserModule,
     AuthModule,
