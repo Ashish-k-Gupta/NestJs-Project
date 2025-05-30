@@ -24,6 +24,10 @@ export class EmailService {
         user: this.configService.get<string>('MAILERSEND_SMTP_USERNAME'),
         pass: this.configService.get<string>('MAILERSEND_SMTP_PASSWORD'),
       },
+      tls: {
+        rejectUnauthorized: false,
+        minVersion: 'TLSv1.2',
+      },
     });
     this.transporter.verify((error, _success) => {
       if (error) {
@@ -47,7 +51,7 @@ export class EmailService {
     try {
       const info = await this.transporter.sendMail(options);
       this.logger.log(`Email sent: ${info.messageId}`);
-      //   this.logger.debug(`Preview URL: ${nodemailer.getTestMessageUrl(info)}`);
+      this.logger.debug(`Preview URL: ${nodemailer.getTestMessageUrl(info)}`);
       return info;
     } catch (error) {
       this.logger.error('Failed to send email via MailerSend:', error);
