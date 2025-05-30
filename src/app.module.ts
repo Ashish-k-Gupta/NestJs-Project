@@ -28,8 +28,8 @@ import { OrganizationModule } from './organization/organization.module';
           // host: configService.get<string>('DB_HOST'),
           // entities: [__dirname + '/**/*.entity{.ts,.js}'],
           synchronize: true,
-          autoLoadEntities: true,
           logging: true,
+          autoLoadEntities: true,
           ssl: dbUrl?.includes('render.com')
             ? { rejectUnauthorized: false }
             : false,

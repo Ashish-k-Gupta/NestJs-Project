@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/await-thenable */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   BadRequestException,
@@ -16,20 +17,23 @@ import { Organization } from 'src/organization/entity/organization.entity';
 import { User } from 'src/user/entity/user.entity';
 import { DataSource, Repository } from 'typeorm';
 import { LoginDto } from './dto/login.dto';
+import { ForgetPasswordDto } from './dto/forget-password.dto';
+import * as crypto from 'crypto';
+import { ConfigService } from '@nestjs/config';
+import { EmailService } from 'src/common/service/email.service';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    @InjectRepository(User)
-    private userRepository: Repository<User>,
-
+    @InjectRepository(User) private userRepository: Repository<User>,
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
-
     private jwtService: JwtService,
     private dataSource: DataSource,
+    private configService: ConfigService,
+    private emailService: EmailService,
   ) {}
 
   async registerNewOrganization(
@@ -50,11 +54,11 @@ export class AuthService {
         );
       }
       const existingUser = await queryRunner.manager.findOne(User, {
-        where: { email: dto.adminEmail },
+        where: { email: dto.adminEmail.toLowerCase() },
       });
       if (existingUser) {
         throw new ConflictException(
-          `User with emailj "${dto.adminEmail}" already exists`,
+          `User with email "${dto.adminEmail}" already exists`,
         );
       }
 
@@ -74,7 +78,31 @@ export class AuthService {
         organizationId: newOrganization.id,
         isActive: true,
       });
+      newAdminUser.verificationToken = crypto.randomBytes(32).toString('hex');
+      newAdminUser.verificationTokenExpires = new Date(
+        Date.now() + 15 * 60 * 60 * 1000,
+      );
       await queryRunner.manager.save(newAdminUser);
+
+      const appBaseUrl = this.configService.get<string>('APP_BASE_URL');
+      const verificationLink = `${appBaseUrl}/auth/verify-email?token=${newAdminUser.verificationToken}`;
+      await this.emailService.sendMail({
+        // <--- Here's how you use it!
+        from: this.configService.get<string>('EMAIL_FROM'), // Your verified sender email from .env
+        to: newAdminUser.email, // The recipient's email
+        subject: 'Verify Your Email Address for Your New Organization', // The email subject
+        html: `                                           
+    <p>Hello ${newAdminUser.firstName},</p>
+    <p>Thank you for registering your organization! Please verify your email address to activate your account by clicking on the link below:</p>
+    <p><a href="${verificationLink}">Verify My Email Address</a></p>
+    <p>This verification link will expire in 15 minutes.</p>
+    <p>If you did not create an account, please ignore this email.</p>
+    <p>Thanks,</p>
+    <p>Your Application Team</p>
+  `, // The HTML content of the email
+      });
+      this.logger.log(`Verification email sent to ${newAdminUser.email}`);
+
       this.logger.log('User Created Successfully');
       await queryRunner.commitTransaction();
 
@@ -138,7 +166,7 @@ export class AuthService {
         throw new UnauthorizedException('Invalid Credentials');
       }
       if (!existingUser.isActive) {
-        throw new UnauthorizedException(' User account is deactiveated');
+        throw new UnauthorizedException(' User account is deactivated');
       }
 
       const isPasswordValid = await existingUser.comparePassword(dto.password);
@@ -182,14 +210,14 @@ export class AuthService {
       });
 
       if (!existingUser) {
-        throw new NotFoundException(`User with ${userId} do not exists`);
+        throw new NotFoundException(`User with ID ${userId} does not exist`);
       }
       const isPasswordValid =
         await existingUser.comparePassword(currentPassword);
       if (!isPasswordValid) {
         throw new UnauthorizedException('Current Password is incorrect');
       }
-      existingUser.setPassword(newPassword);
+      await existingUser.setPassword(newPassword);
       await queryRunner.manager.save(existingUser);
       await queryRunner.commitTransaction();
       return { message: 'Password updated successfully' };
@@ -208,6 +236,143 @@ export class AuthService {
       }
       throw new InternalServerErrorException(
         'Failed to change password due to an unexpected error.',
+      );
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async forgotPassword(dto: ForgetPasswordDto): Promise<{ message: string }> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const user = await queryRunner.manager.findOne(User, {
+        where: { email: dto.email.toLowerCase() },
+      });
+      if (!user || !user.isActive || !user.isVerified) {
+        this.logger.warn(
+          `Password reset requested for non-existent, inactive, or unverified user: ${dto.email}`,
+        );
+        await queryRunner.rollbackTransaction();
+        return {
+          message:
+            'If an account with that email exists, a password reset link has been sent.',
+        };
+      }
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      user.resetPasswordToken = resetToken;
+      user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
+
+      await queryRunner.manager.save(user);
+
+      const appBaseUrl = this.configService.get<string>('APP_BASE_URL');
+      const resetLink = `${appBaseUrl}/reset-password?token=${resetToken}`;
+
+      await this.emailService.sendMail({
+        from: this.configService.get<string>('EMAIL_FROM'),
+        to: user.email,
+        subject: 'Password Reset Request',
+        html: `
+           <p>Hello ${user.firstName || user.email},</p>
+
+            <p>You are receiving this because you (or someone else) have requested the reset of the password for your account.</p>
+            <p>Please click on the following link, or paste this into your browser to complete the process:</p>
+            <p><a href="${resetLink}">Reset My Password</a></p>
+            <p>This link will expire in 15 minutes.</p>
+            <p>If you did not request this, please ignore this email and your password will remain unchanged.</p>
+            <p>Thanks,</p>
+            <p>Your Application Team</p>
+          `,
+      });
+      this.logger.log(`Password reset email sent to ${user.email}`);
+      await queryRunner.commitTransaction();
+      return {
+        message:
+          'If an account with that email exists, a password reset link has been sent.',
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(
+        `Error during forgot password process for ${dto.email}: ${error.message}`,
+        error.stack,
+      );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof UnauthorizedException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Failed to process password reset request due to an unexpected error.',
+      );
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async resetPassword(
+    token: string,
+    newPasswordPlain: string,
+  ): Promise<{ message: string }> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const user = await queryRunner.manager.findOne(User, {
+        where: { resetPasswordToken: token },
+      });
+
+      if (!user) {
+        throw new BadRequestException(
+          'Invalid or expired password reset token.',
+        );
+      }
+      if (
+        !user.resetPasswordExpires ||
+        user.resetPasswordExpires < new Date()
+      ) {
+        throw new BadRequestException(
+          'Password reset token has expired. Please request a new one.',
+        );
+      }
+
+      await user.setPassword(newPasswordPlain);
+
+      user.resetPasswordToken = null;
+      user.resetPasswordExpires = null;
+
+      await queryRunner.manager.save(user);
+      await queryRunner.commitTransaction();
+
+      await this.emailService.sendMail({
+        from: this.configService.get<string>('EMAIL_FROM'),
+        to: user.email,
+        subject: 'Your Password Has Been Changed',
+        html: `
+        <p>Hello ${user.firstName || user.email},</p>
+        <p>This is a confirmation that the password for your account has just been changed.</p>
+        <p>If you did not make this change, please contact support immediately.</p>
+        <p>Thanks,</p>
+        <p>Your Application Team</p>
+      `,
+      });
+      this.logger.log(`Password successfully reset for user: ${user.email}`);
+
+      return { message: 'Password has been reset successfully.' };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(
+        `Error during password reset: ${error.message}`,
+        error.stack,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Failed to reset password due to an unexpected error.',
       );
     } finally {
       await queryRunner.release();
