@@ -13,7 +13,7 @@ import { Organization } from '../../organization/entity/organization.entity';
 import { UserRole } from 'src/common/enums/user-role.enum';
 import * as bcrypt from 'bcryptjs';
 
-@Entity()
+@Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
