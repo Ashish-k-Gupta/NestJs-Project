@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -16,6 +17,8 @@ import { RegisterOrganizationDto } from 'src/organization/dto/register-organizat
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgetPasswordDto } from './dto/forget-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -30,7 +33,7 @@ export class AuthController {
       organization: {
         id: result.organization.id,
         name: result.organization.name,
-        SubscriptionPlan: result.organization.subscriptionPlan,
+        subscriptionPlan: result.organization.subscriptionPlan,
       },
       accessToken: result.token,
     };
@@ -61,6 +64,21 @@ export class AuthController {
       changePasswordDto.currentPassword,
       changePasswordDto.newPassword,
     );
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() forgotPasswordDto: ForgetPasswordDto) {
+    return this.authService.forgotPassword(forgotPasswordDto);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(
+    @Query('token') token: string,
+    @Body() resetPasswordDto: ResetPasswordDto,
+  ) {
+    return this.authService.resetPassword(token, resetPasswordDto.newPassword);
   }
 }
 //
